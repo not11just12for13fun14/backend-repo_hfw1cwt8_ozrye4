@@ -12,9 +12,9 @@ Model name is converted to lowercase for the collection name:
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List
 
-# Example schemas (replace with your own):
+# Example schemas (you can keep these for reference):
 
 class User(BaseModel):
     """
@@ -34,15 +34,38 @@ class Product(BaseModel):
     """
     title: str = Field(..., description="Product title")
     description: Optional[str] = Field(None, description="Product description")
-    price: float = Field(..., ge=0, description="Price in dollars")
+    price: float = Field(..., ge=0, description="Price in rupees")
     category: str = Field(..., description="Product category")
     in_stock: bool = Field(True, description="Whether product is in stock")
 
-# Add your own schemas here:
-# --------------------------------------------------
+# Housekeeping app schemas
 
-# Note: The Flames database viewer will automatically:
-# 1. Read these schemas from GET /schema endpoint
-# 2. Use them for document validation when creating/editing
-# 3. Handle all database operations (CRUD) directly
-# 4. You don't need to create any database endpoints!
+class Service(BaseModel):
+    """
+    Housekeeping services offered
+    Collection name: "service"
+    """
+    name: str = Field(..., description="Service name, e.g., Deep Cleaning")
+    description: str = Field(..., description="Short description of the service")
+    price_inr: int = Field(..., ge=0, description="Starting price in INR")
+    unit: str = Field(..., description="Unit for pricing, e.g., per BHK, per visit")
+    category: str = Field(..., description="Category, e.g., Cleaning, Pest Control")
+    popular: bool = Field(False, description="Mark as popular service")
+
+class Booking(BaseModel):
+    """
+    Customer booking/inquiry details
+    Collection name: "booking"
+    """
+    customer_name: str = Field(..., description="Customer full name")
+    phone: str = Field(..., description="Indian phone number")
+    email: Optional[str] = Field(None, description="Customer email")
+    address: str = Field(..., description="Service address")
+    city: str = Field(..., description="City")
+    pincode: str = Field(..., description="PIN code")
+    service_id: Optional[str] = Field(None, description="Selected service id")
+    service_name: str = Field(..., description="Selected service name")
+    preferred_date: str = Field(..., description="Preferred date (YYYY-MM-DD)")
+    preferred_time: str = Field(..., description="Preferred time slot, e.g., Morning")
+    notes: Optional[str] = Field(None, description="Additional notes")
+    source: str = Field("web", description="Source of booking")

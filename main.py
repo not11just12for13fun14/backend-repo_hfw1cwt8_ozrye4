@@ -1,8 +1,14 @@
 import os
-from fastapi import FastAPI
+from typing import List, Optional
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from bson import ObjectId
 
-app = FastAPI()
+from database import db, create_document, get_documents
+from schemas import Service, Booking
+
+app = FastAPI(title="Housekeeping Services API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -14,15 +20,10 @@ app.add_middleware(
 
 @app.get("/")
 def read_root():
-    return {"message": "Hello from FastAPI Backend!"}
-
-@app.get("/api/hello")
-def hello():
-    return {"message": "Hello from the backend API!"}
+    return {"message": "Housekeeping Services API running"}
 
 @app.get("/test")
 def test_database():
-    """Test endpoint to check if database is available and accessible"""
     response = {
         "backend": "✅ Running",
         "database": "❌ Not Available",
@@ -31,39 +32,126 @@ def test_database():
         "connection_status": "Not Connected",
         "collections": []
     }
-    
+
     try:
-        # Try to import database module
-        from database import db
-        
         if db is not None:
             response["database"] = "✅ Available"
-            response["database_url"] = "✅ Configured"
+            response["database_url"] = "✅ Set" if os.getenv("DATABASE_URL") else "❌ Not Set"
             response["database_name"] = db.name if hasattr(db, 'name') else "✅ Connected"
             response["connection_status"] = "Connected"
-            
-            # Try to list collections to verify connectivity
             try:
                 collections = db.list_collection_names()
-                response["collections"] = collections[:10]  # Show first 10 collections
+                response["collections"] = collections[:10]
                 response["database"] = "✅ Connected & Working"
             except Exception as e:
                 response["database"] = f"⚠️  Connected but Error: {str(e)[:50]}"
         else:
             response["database"] = "⚠️  Available but not initialized"
-            
-    except ImportError:
-        response["database"] = "❌ Database module not found (run enable-database first)"
     except Exception as e:
         response["database"] = f"❌ Error: {str(e)[:50]}"
-    
-    # Check environment variables
-    import os
-    response["database_url"] = "✅ Set" if os.getenv("DATABASE_URL") else "❌ Not Set"
-    response["database_name"] = "✅ Set" if os.getenv("DATABASE_NAME") else "❌ Not Set"
-    
+
     return response
 
+# Helper to convert ObjectId to string in responses
+class ServiceOut(Service):
+    id: Optional[str] = None
+
+class BookingIn(BaseModel):
+    customer_name: str
+    phone: str
+    email: Optional[str] = None
+    address: str
+    city: str
+    pincode: str
+    service_id: Optional[str] = None
+    service_name: str
+    preferred_date: str
+    preferred_time: str
+    notes: Optional[str] = None
+
+@app.get("/api/services", response_model=List[ServiceOut])
+def list_services():
+    try:
+        docs = get_documents("service")
+        cleaned = []
+        for d in docs:
+            d["id"] = str(d.get("_id"))
+            d.pop("_id", None)
+            cleaned.append(d)
+        return cleaned
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/services", status_code=201)
+def create_service(service: Service):
+    try:
+        inserted_id = create_document("service", service)
+        return {"id": inserted_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/bookings", status_code=201)
+def create_booking(booking: BookingIn):
+    try:
+        inserted_id = create_document("booking", booking.model_dump())
+        return {"id": inserted_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Seed a few default services if collection empty
+@app.post("/api/seed", status_code=201)
+def seed_services():
+    try:
+        existing = db["service"].count_documents({}) if db is not None else 0
+        if existing > 0:
+            return {"message": "Already seeded", "count": existing}
+        defaults = [
+            {
+                "name": "Home Deep Cleaning",
+                "description": "Complete home deep clean including kitchen, bathrooms, and bedrooms.",
+                "price_inr": 2499,
+                "unit": "per 1 BHK",
+                "category": "Cleaning",
+                "popular": True,
+            },
+            {
+                "name": "Sofa Shampooing",
+                "description": "Professional sofa shampooing and sanitization.",
+                "price_inr": 599,
+                "unit": "per seat",
+                "category": "Upholstery",
+                "popular": True,
+            },
+            {
+                "name": "Bathroom Deep Clean",
+                "description": "Intensive cleaning and descaling of bathroom fittings and tiles.",
+                "price_inr": 499,
+                "unit": "per bathroom",
+                "category": "Cleaning",
+                "popular": False,
+            },
+            {
+                "name": "Kitchen Deep Clean",
+                "description": "Degreasing of chimney, hob, tiles, and cabinets.",
+                "price_inr": 1599,
+                "unit": "per kitchen",
+                "category": "Cleaning",
+                "popular": False,
+            },
+            {
+                "name": "Pest Control (General)",
+                "description": "Odourless gel and spray treatment for common pests.",
+                "price_inr": 999,
+                "unit": "per 2 BHK",
+                "category": "Pest Control",
+                "popular": False,
+            },
+        ]
+        for s in defaults:
+            create_document("service", s)
+        return {"message": "Seeded", "count": len(defaults)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
